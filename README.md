@@ -16,7 +16,7 @@ I started this project because I didn’t want all the material I studied for fi
 
 Because my oscilloscope was limited—no data export and poor voltage accuracy—I used the ESP32 itself to capture samples and print them to the console. This let me tune capacitor and resistor values virtually and preview op amp outputs. The goal wasn’t to make a super useful device, but to show that I could create something functional with what I had on hand. That meant scavenging for an op amp, resistors, and capacitors rather than buying new parts. It was as much about resourcefulness as it was about engineering.
 
-[Demo](https://www.youtube.com/watch?v=00r8lxy1KA8)
+[Demo Video](https://www.youtube.com/watch?v=00r8lxy1KA8)
 
 ## Features / Objectives
 
