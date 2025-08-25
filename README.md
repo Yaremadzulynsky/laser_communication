@@ -6,6 +6,7 @@
 
 I built a project that turns an ordinary laser pointer into a data link. Instead of sending information through wires or using radio waves, I used light as the medium of communication. A laser beam carried the data, and a light sensor on the other end turned those flashes back into digital information. I created a custom communication protocol with preamble detection, framing, and frequency/phase locking. On top of that, I modeled the system in MATLAB Simulink, tuned the analog circuits, and validated everything on hardware. The end result is a working proof‑of‑concept for laser‑based communication, built entirely from scavenged parts and creativity.
 
+
 ## Overview
 
 ![](./assets/Figure1.jpeg)
@@ -14,6 +15,8 @@ I built a project that turns an ordinary laser pointer into a data link. Instead
 I started this project because I didn’t want all the material I studied for finals to just fade away. From my microcontrollers course, I pulled in concepts about hardware drivers and communication protocols. From sensors and instrumentation, I applied op amps and signal conditioning. From system modeling, I used Simulink to simulate the system with real-world measurements from an LDR receiving a laser signal.
 
 Because my oscilloscope was limited—no data export and poor voltage accuracy—I used the ESP32 itself to capture samples and print them to the console. This let me tune capacitor and resistor values virtually and preview op amp outputs. The goal wasn’t to make a super useful device, but to show that I could create something functional with what I had on hand. That meant scavenging for an op amp, resistors, and capacitors rather than buying new parts. It was as much about resourcefulness as it was about engineering.
+
+[Demo](https://www.youtube.com/watch?v=00r8lxy1KA8)
 
 ## Features / Objectives
 
