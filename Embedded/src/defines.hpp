@@ -12,7 +12,7 @@
 #include "esp_timer.h"
 
 // ================== CONFIG ==================
-#define BIT_MS              (20) //Seem to be able to push 18 ms per bit now that we have RMT on TX
+#define BIT_MS              (10) //64 is max on RMT TX
 
 
 #define HALF_MS             (BIT_MS/2)
@@ -20,10 +20,11 @@
 #define END_OF_FRAME_BYTE   (0xFD)                    // 11111101
 #define PREAMBLE_REPS       (1)
 #define PREAMBLE_BYTE       (0xFF)                    // 11111111
-#define DEBUG_RX            (1) 
+#define DEBUG_RX            (0) 
 #define DEBUG_TX            (0)
 #define ENABLE_RX           (1)
 #define ENABLE_TX           (1)
+#define FREQUENCY_TOLERANCE_US (4000)
 
 
 // ================== LOG TAG_TX =================
@@ -43,6 +44,6 @@ static const char *TAG_RX = "LASER_RX";
 #endif
 
 // Minimum time between accepted rising edges (software debounce)
-#define RX_DEBOUNCE_US      ((17)*1000)                   // 20 ms
+#define RX_DEBOUNCE_US      ((6)*1000)                   // 20 ms
 // Additional debounce in RX task for queued edges
 #define RX_TASK_DEBOUNCE_US (0000)                   // 10 ms
