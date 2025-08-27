@@ -1,22 +1,22 @@
-![](./assets/overview.png)
-
 # Project Summary
 
 ## Executive Summary
 
 I built a project that turns an ordinary laser pointer into a data link. Instead of sending information through wires or using radio waves, I used light as the medium of communication. A laser beam carried the data, and a light sensor on the other end turned those flashes back into digital information. I created a custom communication protocol with preamble detection, framing, and frequency/phase locking. On top of that, I modeled the system in MATLAB Simulink, tuned the analog circuits, and validated everything on hardware. The end result is a working proof‑of‑concept for laser‑based communication, built entirely from scavenged parts and creativity.
 
+[Demo Video](https://www.youtube.com/watch?v=00r8lxy1KA8)
+
+---
 
 ## Overview
 
-![](./assets/Figure1.jpeg)
-*(Hardware setup)*
+**(Hardware setup)**
 
 I started this project because I didn’t want all the material I studied for finals to just fade away. From my microcontrollers course, I pulled in concepts about hardware drivers and communication protocols. From sensors and instrumentation, I applied op amps and signal conditioning. From system modeling, I used Simulink to simulate the system with real-world measurements from an LDR receiving a laser signal.
 
 Because my oscilloscope was limited—no data export and poor voltage accuracy—I used the ESP32 itself to capture samples and print them to the console. This let me tune capacitor and resistor values virtually and preview op amp outputs. The goal wasn’t to make a super useful device, but to show that I could create something functional with what I had on hand. That meant scavenging for an op amp, resistors, and capacitors rather than buying new parts. It was as much about resourcefulness as it was about engineering.
 
-[Demo Video](https://www.youtube.com/watch?v=00r8lxy1KA8)
+---
 
 ## Features / Objectives
 
@@ -30,6 +30,31 @@ Because my oscilloscope was limited—no data export and poor voltage accuracy�
 * Lay groundwork for eventually emulating UART over the laser link
 * Lay groundwork for adding parity or hamming encoding
 
+**Purely Technical Features:**
+
+* Return-to-Zero encoding with configurable 14 ms bit period.
+
+* Frame format: two 0xFF preamble bytes, 0xFE start-of-frame, length and payload bytes offset by 0x80, and 0xFD end-of-frame.
+
+* RMT-based transmitter driving GPIO13.
+
+* Interrupt-driven receiver on GPIO26 with 10 ms software debounce and frequency locking.
+
+* Queue-based TX (`g_tx_queue`) and RX (`rx_edge_queue`) paths decoupled from application logic.
+
+* Compile-time flags to enable/disable modules and debug logs.\\
+
+## Design Limitations & Constraints
+
+This project was shaped not only by engineering choices but also by practical constraints. These limitations influenced the design and in some ways made the project more interesting:
+
+* **Oscilloscope restrictions** – The scope on hand could not export data and had limited accuracy, so I relied on the ESP32’s ADC to capture and log signals for analysis.
+* **Minimal analog hardware** – With only one op amp available, I couldn’t build a Schmitt trigger or more advanced front-end circuitry. This forced me to detect only rising edges, rule out Manchester encoding, and infer zeros from timing gaps.
+* **Photodiode instead of a full detector** – Using a bare photodiode meant the raw signal was noisy and unusable without conditioning. This limitation let me apply classroom knowledge of op amp signal conditioning in a very direct way.
+* **No new parts allowed** – To stay true to the self‑imposed rule of resourcefulness, I scavenged components rather than purchasing. This made the project feel closer to a creative engineering challenge than a parts‑driven build.
+
+---
+
 ## System Architecture
 
 The setup was kept simple and built from what I had:
@@ -41,18 +66,22 @@ The setup was kept simple and built from what I had:
 * **Software Stack**: ESP-IDF with FreeRTOS, plus MATLAB Simulink for modeling
 * **Protocol**: Custom asynchronous design tailored for laser transmission
 
+**Hardware Pins:**
+
+| Pin    | Direction | Function                                   |
+| ------ | --------- | ------------------------------------------ |
+| GPIO13 | Output    | Laser/LED driver (RMT channel)             |
+| GPIO26 | Input     | Light sensor edge capture (GPIO interrupt) |
+
+---
+
 ## Implementation Details
 
 I used two FreeRTOS tasks: one for TX and one for RX. For debugging they can run on the same board, but for actual operation TX and RX each run on separate ESP32s. Conditional compilation lets me switch roles easily.
 
-**Transmission (TX):**
+### Transmission (TX)
+
 ```mermaid
----
-config:
-  look: neo
-  layout: elk
-  theme: redux
----
 flowchart LR
     n13["TX Byte Queue"] -- dequeue --> n15["byte = dequeue()"]
     n14["GPIO 13<br>RMT"] --> n12(["Laser"])
@@ -64,57 +93,43 @@ flowchart LR
     n20["Producer"] -- enqueue --> n13
     n13@{ shape: rounded}
     n20@{ shape: rect}
-
 ```
-*(Transmission block diagram)*
+
+**(Transmission block diagram)**
+
 * Uses the ESP32 RMT peripheral for precise timing (task scheduling wasn’t accurate enough).
 * Implements Return-to-Zero (RZ) encoding: a rising edge means a 1, and 0s are inferred from timing gaps.
 * Frames are structured with preamble, start byte, payload, and end byte.
 * A FreeRTOS queue holds outgoing data. The TX task waits for new bytes, then encodes and transmits them.
 
-**Reception (RX):**
+### Reception (RX)
 
 ```mermaid
----
-config:
-  look: neo
-  layout: elk
-  theme: redux
----
 flowchart LR
     n1(["LDR Voltage"]) --> n2["Signal Conditioning"]
     n2 --> n4["GPIO 26 IRQ"]
     n4 -- enqueue --> n3["RX Edge Queue"]
-    n3 -- dequeue --> n5["byte = (byte &lt;&lt; 1) | 0<br>(0s since last edge) times"]
-    n5 --> n6["byte = (byte &lt;&lt; 1) | 1"]
-    n6 --> n7["full_byte_collected -&gt; state machine"]
-    n7 -- "state = PREAMBLE" --> n8["byte = PREAMBLE_BYTE? -&gt;<br>state = SOF"]
-    n7 -- "state = SOF" --> n9@{ label: "byte = SOF_BYTE? -&gt;<br style=\"--tw-scale-x:\">state = PAYLOAD" }
-    n7 -- "state = PAYLOAD" --> n10["byte = PAYLOAD_BYTE? -&gt;<br>consume(byte)<br>state = EOF"]
-    n7 -- "state = EOF" --> n11["byte = EOF_BYTE? -&gt;<br>state = PREAMBLE"]
-    n3@{ shape: rounded}
-    n9@{ shape: rect}
-
-
+    n3 -- dequeue --> n5["byte = (byte << 1) | 0<br>(0s since last edge) times"]
+    n5 --> n6["byte = (byte << 1) | 1"]
+    n6 --> n7["full_byte_collected -> state machine"]
+    n7 -- "state = PREAMBLE" --> n8["byte = PREAMBLE_BYTE? -> state = SOF"]
+    n7 -- "state = SOF" --> n9["byte = SOF_BYTE? -> state = PAYLOAD"]
+    n7 -- "state = PAYLOAD" --> n10["byte = PAYLOAD_BYTE? -> consume(byte)<br>state = EOF"]
+    n7 -- "state = EOF" --> n11["byte = EOF_BYTE? -> state = PREAMBLE"]
 ```
-*(Reception block diagram)*
 
-*Note: state machine starts at PREAMBLE*
+**(Reception block diagram)**
+
 * Rising edges trigger interrupts. Timestamps are pushed into an ISR-safe FreeRTOS queue.
 * The RX task runs a state machine that processes these timestamps.
 * By comparing time gaps to the expected bit duration (from preamble), it reconstructs 0s between 1s.
 * The state machine looks for preamble, start byte, payload, and end byte in order.
 
-**Custom Protocol**
-![](./assets/frame.png)
-*(Data frame)*
-The custom protocol I developed for the laser based communication.
+**Protocol Frame:**
 
-**Design Choices:**
+**(Data frame)**
 
-* RZ encoding was chosen because it works with just one op amp and avoids negative voltages.
-* Carrier modulation was considered but ruled out—LDR response time is too slow.
-* I avoided photodiodes on purpose to challenge myself with cleaning up a noisier LDR signal.
+---
 
 ## Challenges and Solutions
 
@@ -139,116 +154,144 @@ Hard to aim a 2 mm beam at a 5 mm LDR.
 **Solution:** Taped both to a ruler for quick tests.
 
 **Challenge 6: Small Bytes Unreliable**
-Bytes < 128 were not received reliably due to larger required infering of zeros.
-
+Bytes < 128 were not received reliably due to larger required inferring of zeros.
 **Solution:** Added 128 to all sent bytes and subtracted 128 on the RX side.
 
-**Challenge 6: Phase Recovery**
-If a section of the message contains the preamble sequence (more likely than you would think) and we are no longer in sync, the byte boundaries will be incorrect and future data will be corrupt. 
+**Challenge 7: Phase Recovery**
+If a section of the message contains the preamble sequence (more likely than you would think) and we are no longer in sync, the byte boundaries will be incorrect and future data will be corrupt.
+**Solution:** Multiple preamble for lock. The more preambles for lock required the less likely the preamble sequence will be found in the message itself.
 
-**Solution:** Multiple preamble for lock. The more preambles for lock required the less likley the preamble sequence will be found in the message itself.  
-
-**Challenge 7: Corrupted Message Recovery**
-Corrupted messages (hand in front of beam for part of it) takes more than 1 preamble sequency to relock.
-
+**Challenge 8: Corrupted Message Recovery**
+Corrupted messages (hand in front of beam for part of it) takes more than 1 preamble sequence to relock.
 **Solution:** In progress
 
+---
 
 ## Testing & Validation
 
-**Simulation:**
-![](./assets/simscape.png)
-*(Signal conditioning model)*
+### Simulation
+
+**(Signal conditioning model)**
+
 * Used Simscape with real LDR samples to test conditioning.
 * Tuned op amp model to match my actual device.
 * Validated that rising edges lined up as expected.
-* Bit times (\~20 ms) gave enough tolerance for small inaccuracies.
 
-![](./assets/Figurex.png)
-*(Simulated LDR voltage vs conditioned output)*
-**Note:** The laser turning on actually decreases the resistance of the LDR, which in a voltage divider results in a lower voltage. Since the differentiator is inverting, we are technically detecting falling edges of the raw LDR voltage. However, the op amp inversion flips these into rising edges, which makes it easier to conceptualize the system as reacting to rising edges when the laser turns on. Throughout this document, references to “rising edges” refer to these inverted signals.
+**(Simulated LDR voltage vs conditioned output)**
 
-**Hardware:**
+### Hardware
 
-* LED test: wired LED to op amp output, flashed it with a phone light, confirmed rising edge pulses.
-* Debug mode: TX and RX on one board, printed raw bits/bytes/state machine.
-* Full test: transmitted “Hello World!\n” and confirmed reception.
-* Separate boards: final validation that TX and RX worked across devices.
+* LED test: wired LED to op amp output, flashed with a phone light.
+* Debug mode: TX and RX on one board.
+* Full test: transmitted “Hello World!\n”.
+* Separate boards: validated across devices.
+
+**Expected Logs:**
+
+```
+LASER_TX: Sending byte 0x88
+LASER_RX: Preamble byte found
+LASER_RX: Received payload: Hello World!
+```
+
+---
 
 ## Constraints
 
 * Only used parts on hand (no new purchases)
-* Oscilloscope was limited: no export, poor accuracy, only useful for waveform shapes
-* Stuck with ESP32 for capture and control
-* Relied on just one op amp and basic passive components
+* Oscilloscope limited
+* Stuck with ESP32
+* Relied on one op amp + passives
+
+---
+
+## Configuration
+
+All tuning parameters live in `Embedded/src/defines.hpp`.
+
+| Macro                     | Default | Purpose                     |
+| ------------------------- | ------- | --------------------------- |
+| `BIT_MS`                  | 14      | Bit duration (ms)           |
+| `RX_DEBOUNCE_US`          | 10000   | Minimum edge spacing (µs)   |
+| `FREQUENCY_TOLERANCE_US`  | 4000    | Lock window (µs)            |
+| `MAX_PAYLOAD_LENGTH`      | 128     | Bytes per frame             |
+| `PREAMBLE_REPS`           | 2       | Preamble bytes              |
+| `PREAMBLE_BYTE`           | `0xFF`  | Preamble value              |
+| `START_OF_FRAME_BYTE`     | `0xFE`  | SOF marker                  |
+| `END_OF_FRAME_BYTE`       | `0xFD`  | EOF marker                  |
+| `ENABLE_RX` / `ENABLE_TX` | 1       | Compile-time role selection |
+| `DEBUG_RX` / `DEBUG_TX`   | 0       | Verbose logging             |
+| `RMT_RESOLUTION_HZ`       | 1 MHz   | RMT clock resolution        |
+
+---
 
 ## Future Improvements
 
 * Add a better alignment method for longer distance
-* Rethink framing: shrink preamble overhead, add parity or Hamming codes
-* Improve protocol so every byte doesn’t need its own preamble/start/stop
-* Use a photodiode with carrier modulation for faster data rates
-* Implement Manchester encoding with a second op amp for proper edge detection and 8-bit frames
+* Shrink preamble overhead
+* Add parity/Hamming codes
+* Consider photodiode + carrier modulation
+* Explore Manchester encoding
+
+---
 
 ## Key Learnings
 
 * Reinforced protocol design by building one from scratch
-* Learned to use ESP32 RMT for precise bit timing
-* Practiced analog signal conditioning with real-world noise
-* Found creative workarounds for limited test equipment
-* Gained experience making the most out of limited parts
-* Followed a full workflow: hardware → embedded code → simulation
+* Learned ESP32 RMT for bit timing
+* Practiced analog conditioning with noise
+* Creative workarounds for limited test gear
+* Followed full workflow: hardware → embedded code → simulation
+
+---
 
 ## Conclusion
 
-This project turned my exam knowledge into a working prototype. By mixing microcontroller programming, analog signal conditioning, and system modeling, I created a simple but functional laser comms link. Even with limited tools and parts, I managed to send real data reliably. More than anything, this project shows adaptability, resourcefulness, and the ability to bring theory into practice.
+This project turned my exam knowledge into a working prototype. By mixing microcontroller programming, analog signal conditioning, and system modeling, I created a simple but functional laser comms link. Even with limited tools and parts, I managed to send real data reliably. More than anything, this project shows adaptability, resourcefulness, and the ability to bring theory into practice[.](https://docs.espressif.com/projects/esp-idf/en/v4.3/esp32/api-reference/peripherals/rmt.html)
 
-![](./assets/full_demo.jpeg)
-*(Full system running in debug mode)*
+\*\*[(Full system running in debug mod](https://docs.espressif.com/projects/esp-idf/en/v4.3/esp32/api-reference/peripherals/rmt.html)\*\***e)**
 
-## References
+---
 
-**Documentation & Datasheets:**
+## [References](https://www.ti.com/lit/ds/symlink/ua741.pdf)
 
-* [ESP-IDF RMT Peripheral Documentation](https://docs.espressif.com/projects/esp-idf/en/v4.3/esp32/api-reference/peripherals/rmt.html)
-* [Texas Instruments UA741 Op Amp Datasheet](https://www.ti.com/lit/ds/symlink/ua741.pdf?ts=1756024765535)
+* [ESP-IDF RMT Peripheral Do](https://www.ti.com/lit/ds/symlink/ua741.pdf)[cume](https://docs.espressif.com/projects/esp-idf/en/v4.3/esp32/api-reference/peripherals/rmt.html)[ntation](https://learn.adafruit.com/assets/123406)
+* [Texas Instruments UA741 Op A](https://learn.adafruit.com/assets/123406)[mp Datasheet](https://www.ti.com/lit/ds/symlink/ua741.pdf)
 * [Adafruit Feather ESP32 V2 Documentation](https://learn.adafruit.com/assets/123406)
 
 **Relevant Courses:**
 
-* MTE 325 (Microprocessor Systems and Interfacing) – protocol development
-* MTE 351 (System Models) – Simulink/Simscape and MATLAB
-* MTE 220 (Sensors and Instrumentation) – signal conditioning and circuit analysis
+* MTE 325 – protocol development
+* MTE 351 – Simulink/Simscape
+* MTE 220 – signal conditioning
 
 **Tools Used:**
 
-* GPT-5 via Cursor
-* GPT-5 via browser
+* GPT-5 via Cursor & browser
 * PlatformIO
+
+---
 
 ## How to Build & Run
 
 1. **Wire up the circuit:**
 
-   * Connect the laser pointer to the TX board GPIO (through a transistor or driver circuit if required).
-   * Build the receiver circuit with the LDR, op amp, resistors, and capacitors as described.
-   ![](./assets/circuit.png)
-     *(Circuit diagram)*
+   * Connect the laser pointer to GPIO13.
+   * Build the receiver with LDR + op amp.
+   * **(Circuit diagram)**
 
 2. **Set up PlatformIO:**
 
-   * Open the project in [PlatformIO](https://platformio.org/) with VSCode.
-   * Make sure the ESP32 Feather V2 environment is selected.
+   * Open in VSCode, select Feather V2.
 
 3. **Select TX or RX mode:**
 
-   * The code uses conditional compilation flags in the config header to enable either transmitter or receiver.
+   * Use config flags in header.
 
 4. **Build & upload:**
 
-   * Via PlatformIO
+   * `pio run -t upload`
 
 5. **Run tests:**
 
-   * In TX mode, queue up a message to send (e.g., "Hello World!").
-   * In RX mode, monitor the serial output to see decoded bytes.
+   * TX queues messages, RX decodes serial output.
