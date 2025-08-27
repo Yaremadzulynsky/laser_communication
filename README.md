@@ -143,10 +143,15 @@ Bytes < 128 were not received reliably due to larger required infering of zeros.
 
 **Solution:** Added 128 to all sent bytes and subtracted 128 on the RX side.
 
-**Challenge 6: Unreliable 3 Char Pairs**
-ex: "t m"
+**Challenge 6: Phase Recovery**
+If a section of the message contains the preamble sequence (more likely than you would think) and we are no longer in sync, the byte boundaries will be incorrect and future data will be corrupt. 
 
-**Solution:** None yet
+**Solution:** Multiple preamble for lock. The more preambles for lock required the less likley the preamble sequence will be found in the message itself.  
+
+**Challenge 7: Corrupted Message Recovery**
+Corrupted messages (hand in front of beam for part of it) takes more than 1 preamble sequency to relock.
+
+**Solution:** In progress
 
 
 ## Testing & Validation
