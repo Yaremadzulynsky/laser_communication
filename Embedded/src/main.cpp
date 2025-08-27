@@ -13,6 +13,12 @@ static constexpr gpio_num_t LASER_RX_GPIO = GPIO_NUM_26;
 // - bit 1: HIGH for first half-bit, then LOW for second half
 // - bit 0: LOW for entire bit period
 
+struct tx_data_t
+{
+	uint8_t data[128]; // 128 bytes
+	size_t len;		   // length of the data
+};
+
 // ================== TX FreeRTOS QUEUE CONFIG ==================
 static QueueHandle_t g_tx_queue = nullptr;
 static constexpr size_t TX_QUEUE_LEN = 512; // adjust as needed
@@ -54,7 +60,7 @@ static esp_err_t laser_tx_init(void)
 	LOG_TX("RMT TX channel initialized on GPIO %d", (int)LASER_GPIO);
 
 	// Create TX queue
-	g_tx_queue = xQueueCreate(TX_QUEUE_LEN, sizeof(uint8_t));
+	g_tx_queue = xQueueCreate(TX_QUEUE_LEN, sizeof(tx_data_t));
 	if (!g_tx_queue)
 		return ESP_ERR_NO_MEM;
 
@@ -69,19 +75,19 @@ static esp_err_t laser_tx_init(void)
 static void tx_task(void *arg)
 {
 	(void)arg;
-	uint8_t byte = 0;
+	tx_data_t tx_data;
 	for (;;)
 	{
 		// Block until at least one byte is available
-		if (xQueueReceive(g_tx_queue, &byte, portMAX_DELAY) == pdTRUE)
+		if (xQueueReceive(g_tx_queue, &tx_data, portMAX_DELAY) == pdTRUE)
 		{
 			// Send each queued byte as its own frame
-			rz_send_frame(&byte, 1);
+			rz_send_frame(&tx_data.data[0], 1);
 
 			// Drain any immediately available bytes without blocking
-			while (xQueueReceive(g_tx_queue, &byte, 0) == pdTRUE)
+			while (xQueueReceive(g_tx_queue, &tx_data, 0) == pdTRUE)
 			{
-				rz_send_frame(&byte, 1);
+				rz_send_frame(&tx_data.data[0], 1);
 			}
 		}
 	}
@@ -189,23 +195,23 @@ static void rz_send_frame(const uint8_t *payload, size_t len)
  * @param wait_ticks maximum time to wait for the queue to be available
  * @return esp_err_t ESP_OK if successful, ESP_ERR_INVALID_STATE if the queue is not initialized, ESP_ERR_TIMEOUT if the queue is full
  */
-static inline esp_err_t laser_tx_write(const uint8_t *data, size_t len, TickType_t wait_ticks)
+static inline esp_err_t laser_tx_write(tx_data_t tx_data, TickType_t wait_ticks)
 {
 	// Check if the TX queue is initialized
 	if (!g_tx_queue)
 		return ESP_ERR_INVALID_STATE;
 
 	// Enqueue the bytes
-	for (size_t i = 0; i < len; ++i)
-	{
+	// for (size_t i = 0; i < len; ++i)
+	// {
 		// Send the byte to the TX queue
-		if (xQueueSend(g_tx_queue, &data[i], wait_ticks) != pdTRUE)
+		if (xQueueSend(g_tx_queue, &tx_data, wait_ticks) != pdTRUE)
 		{
 			return ESP_ERR_TIMEOUT;
 		}
-	}
+	// }
 
-	LOG_TX("Sent bytes: %s", data);
+	// LOG_TX("Sent bytes: %s", data);
 
 	return ESP_OK;
 }
@@ -374,12 +380,11 @@ static inline void rx_check_preamble()
 			// LOG_RX("Frequency locked, entering search start of frame state");
 			g_rx.locked_bit_time_us = (max_delta + min_delta) / 2;
 			LOG_RX("Bit time locked to: %lld us", g_rx.locked_bit_time_us);
-
 		}
-		else {
+		else
+		{
 			return;
 		}
-
 
 		/*
 		we may want more than one preamble byte to lock the timing so increment the preamble found count.
@@ -519,7 +524,7 @@ static inline void rx_push_completed_byte()
 		rx_check_stop();
 		// reset frequency lock
 		g_rx.locked_bit_time_us = UINT64_MAX;
-		
+
 		break;
 	default:
 		break;
@@ -919,20 +924,24 @@ extern "C" void app_main(void)
 // if TX is enabled, send a test message continuously.
 #if ENABLE_TX
 	// create a test message to send.
-	const uint8_t hello[] = {(uint8_t)'H', (uint8_t)'e', (uint8_t)'l', (uint8_t)'l', (uint8_t)'o', (uint8_t)' ', (uint8_t)'W', (uint8_t)'o', (uint8_t)'r', (uint8_t)'l', (uint8_t)'d', (uint8_t)'!', (uint8_t)'\n'};
+	// const uint8_t hello[] = {(uint8_t)'H', (uint8_t)'e', (uint8_t)'l', (uint8_t)'l', (uint8_t)'o', (uint8_t)' ', (uint8_t)'W', (uint8_t)'o', (uint8_t)'r', (uint8_t)'l', (uint8_t)'d', (uint8_t)'!', (uint8_t)'\n'};
+	const uint8_t hello[] = {(uint8_t)'H', (uint8_t)'e', (uint8_t)'\n'};
 	// const uint8_t hello[] = {0xAA};
-
+	tx_data_t tx_data;
+	memcpy(tx_data.data, hello, sizeof(hello));
+	tx_data.len = sizeof(hello);
 	// loop forever
 	for (;;)
 	{
 		// send the test message
-		for (size_t i = 0; i < sizeof(hello); ++i)
-		{
+		// for (size_t i = 0; i < sizeof(hello); ++i)
+		// {
+			// tx_data.data[0] = hello[i];
 			// enqueue one byte at a time; TX task will send frames
-			laser_tx_write(&hello[i], 1, portMAX_DELAY);
-		}
+			laser_tx_write(tx_data, portMAX_DELAY);
+		// }
 		// wait for 2.5 seconds
-		vTaskDelay(pdMS_TO_TICKS(2500));
+		vTaskDelay(pdMS_TO_TICKS(7500));
 	}
 #else
 	// wait forever

@@ -12,7 +12,8 @@
 #include "esp_timer.h"
 
 // ================== CONFIG ==================
-#define BIT_MS              (10) //64 is max on RMT TX
+// #define BIT_MS              (10) //64 is max on RMT TX
+#define BIT_MS              (30) //min for messages with breaks in between for some reason? 
 
 
 #define HALF_MS             (BIT_MS/2)
@@ -44,6 +45,7 @@ static const char *TAG_RX = "LASER_RX";
 #endif
 
 // Minimum time between accepted rising edges (software debounce)
-#define RX_DEBOUNCE_US      ((6)*1000)                   // 20 ms
+// #define RX_DEBOUNCE_US      ((6)*1000)                   // 20 ms
+#define RX_DEBOUNCE_US      ((20)*1000)                   // Pair with 
 // Additional debounce in RX task for queued edges
 #define RX_TASK_DEBOUNCE_US (0000)                   // 10 ms
