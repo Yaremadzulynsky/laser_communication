@@ -13,10 +13,12 @@ static constexpr gpio_num_t LASER_RX_GPIO = GPIO_NUM_26;
 // - bit 1: HIGH for first half-bit, then LOW for second half
 // - bit 0: LOW for entire bit period
 
+// NOTE: A 0-128 in memory is actually a 128-256 when sent via the laser as its
+// sending values < 128 is not a reliable way to send data. The RX side recovers the 0-128 range.
 struct tx_data_t
 {
-	uint8_t data[128]; // 128 bytes
-	size_t len;		   // length of the data
+	uint8_t data[MAX_PAYLOAD_LENGTH]; // 128 bytes
+	size_t len;						  // length of the data
 };
 
 // ================== TX FreeRTOS QUEUE CONFIG ==================
@@ -82,12 +84,12 @@ static void tx_task(void *arg)
 		if (xQueueReceive(g_tx_queue, &tx_data, portMAX_DELAY) == pdTRUE)
 		{
 			// Send each queued byte as its own frame
-			rz_send_frame(&tx_data.data[0], 1);
+			rz_send_frame(tx_data.data, tx_data.len);
 
 			// Drain any immediately available bytes without blocking
 			while (xQueueReceive(g_tx_queue, &tx_data, 0) == pdTRUE)
 			{
-				rz_send_frame(&tx_data.data[0], 1);
+				rz_send_frame(tx_data.data, tx_data.len);
 			}
 		}
 	}
@@ -144,6 +146,7 @@ static inline void rz_send_byte(uint8_t value)
 	}
 }
 
+uint8_t bytes_to_send = UINT8_MAX;
 /**
  * @brief Send a frame via RZ encoding.
  *
@@ -172,12 +175,33 @@ static void rz_send_frame(const uint8_t *payload, size_t len)
 	rz_send_bit(1);
 	rz_send_byte(START_OF_FRAME_BYTE);
 
-	// send a start bit
+	// Send length of payload
+	// rz_send_bit(1);
+	// turn len into a byte
+	// min reliable uint8_t is 128 just sub on the other side
+	uint8_t bytes_to_send = (uint8_t)len + 128;
+
+	// printf("bytes_to_send: %d\n", bytes_to_send);
+	// fflush(stdout);
 	rz_send_bit(1);
+	// bytes_to_send -= 10;
+	rz_send_byte(bytes_to_send);
+
+	// send a start bit
+	// rz_send_bit(1);
 	// Send payload
+	// printf("len: %d\n", len);
+	// printf("payload: ");
+	// for (size_t i = 0; i < len; ++i)
+	// {
+	// 	printf("%02X ", payload[i]);
+	// }
+	// printf("\n");
+	// fflush(stdout);
 	for (size_t i = 0; i < len; ++i)
 	{
-		rz_send_byte(payload[i]);
+		rz_send_bit(1);
+		rz_send_byte(payload[i] + 128);
 	}
 
 	// send a start bit
@@ -204,14 +228,12 @@ static inline esp_err_t laser_tx_write(tx_data_t tx_data, TickType_t wait_ticks)
 	// Enqueue the bytes
 	// for (size_t i = 0; i < len; ++i)
 	// {
-		// Send the byte to the TX queue
-		if (xQueueSend(g_tx_queue, &tx_data, wait_ticks) != pdTRUE)
-		{
-			return ESP_ERR_TIMEOUT;
-		}
+	// Send the byte to the TX queue
+	if (xQueueSend(g_tx_queue, &tx_data, wait_ticks) != pdTRUE)
+	{
+		return ESP_ERR_TIMEOUT;
+	}
 	// }
-
-	// LOG_TX("Sent bytes: %s", data);
 
 	return ESP_OK;
 }
@@ -227,12 +249,13 @@ typedef enum
 {
 	RX_SEARCH_PREAMBLE = 0,
 	RX_SEARCH_START_OF_FRAME = 1,
-	RX_COLLECT_PAYLOAD = 2,
-	RX_SEARCH_STOP = 3
+	RX_COLLECT_LENGTH = 2,
+	RX_COLLECT_PAYLOAD = 3,
+	RX_SEARCH_STOP = 4
 } rx_state_t;
 
 // uint64 shift register to store 8 bit timestamps
-static uint64_t g_rx_bit_times[8];
+static uint64_t g_rx_bit_times[PREAMBLE_REPS * 8];
 static uint8_t g_rx_bit_times_measured = 0;
 
 /**
@@ -281,6 +304,12 @@ static QueueHandle_t isr_log_queue = nullptr;
 // Choose a max message length for safety
 #define ISR_LOG_BUF_SIZE 512
 static bool lock_frequency(int64_t now_us);
+static void consume(uint8_t payload_byte)
+{
+	printf("%c", payload_byte);
+	fflush(stdout);
+}
+
 static void log_in_isr(int64_t now_us, BaseType_t *awoken, const char *fmt, ...)
 {
 	char buf[ISR_LOG_BUF_SIZE];
@@ -332,6 +361,8 @@ static inline void rx_check_preamble()
 	// check if current byte is the preamble byte
 	if (g_rx.current_byte == PREAMBLE_BYTE)
 	{
+		// printf("Preamble byte found\n");
+		// fflush(stdout);
 		//
 		// shift the bit time window to the left by 1
 		// for (int i = 0; i < 7; ++i)
@@ -355,7 +386,7 @@ static inline void rx_check_preamble()
 		// find the min and max delta between adjacent bit times
 		int64_t min_delta = INT64_MAX;
 		int64_t max_delta = 0;
-		for (int i = 0; i < 7; ++i)
+		for (int i = 0; i < PREAMBLE_REPS * 8 - 1; ++i)
 		{
 			int64_t delta = g_rx_bit_times[i + 1] - g_rx_bit_times[i];
 			if (delta < min_delta)
@@ -368,12 +399,24 @@ static inline void rx_check_preamble()
 			}
 		}
 
+		
+		g_rx.preamble_found_count++;
+		printf("preamble found count: %d\n", g_rx.preamble_found_count);
+		fflush(stdout);
+		//reset everything except the preamble found count
+		g_rx.current_byte = 0;
+		g_rx.bit_pos = 0;
+		g_rx.have_prev_edge = false;
+		g_rx.last_rising_us = 0;
+		g_rx.payload_bytes_collected = 0;
 		// print the min and max delta
 		// LOG_RX("Min delta: %lld, Max delta: %lld, Delta: %lld, Tolerance: %d\n", min_delta, max_delta, max_delta - min_delta, FREQUENCY_TOLERANCE_US);
 
 		// print the frequency tolerance
 		// LOG_RX("Frequency tolerance: %lld us", FREQUENCY_TOLERANCE_US);
 
+		// printf("max_delta: %lld, min_delta: %lld, delta: %lld\n", max_delta, min_delta, max_delta - min_delta);
+		// fflush(stdout);
 		// check if the frequency is locked
 		if (max_delta - min_delta < FREQUENCY_TOLERANCE_US)
 		{
@@ -386,13 +429,7 @@ static inline void rx_check_preamble()
 			return;
 		}
 
-		/*
-		we may want more than one preamble byte to lock the timing so increment the preamble found count.
-		when the preamble found count is greater than or equal to the preamble reps, set the state to
-		RX_SEARCH_START_OF_FRAME and reset the assembly.
-		*/
-		g_rx.preamble_found_count++;
-
+		
 		// if we have recieved the required number of preamble bytes
 		if (g_rx.preamble_found_count >= PREAMBLE_REPS)
 		{
@@ -423,8 +460,8 @@ static inline void rx_check_start_of_frame()
 	{
 		// reset the assembly so we move to the next state
 		rx_reset_assembly();
-		// set the state to RX_COLLECT_PAYLOAD which is the next state.
-		g_rx.state = RX_COLLECT_PAYLOAD;
+		// set the state to RX_COLLECT_LENGTH which is the next state.
+		g_rx.state = RX_COLLECT_LENGTH;
 		// log that we have locked the start of frame byte and can collect the payload.
 		LOG_RX("Start of frame byte found, entering collect payload state");
 	}
@@ -434,6 +471,8 @@ static inline void rx_check_start_of_frame()
 		rx_reset_assembly();
 		// set the state to RX_SEARCH_PREAMBLE which is the next state.
 		g_rx.state = RX_SEARCH_PREAMBLE;
+		g_rx.locked_bit_time_us = UINT64_MAX;
+
 		LOG_RX("Start of frame byte not found, continuing to search preamble");
 	}
 }
@@ -445,28 +484,68 @@ static inline void rx_check_start_of_frame()
  */
 static inline void rx_collect_payload()
 {
-	LOG_RX("Collecting payload byte: 0x%02X", g_rx.current_byte);
+	g_rx.current_byte -= 128;
+	// LOG_RX("Collecting payload byte: 0x%02X", g_rx.current_byte);
 
-	printf("%c", g_rx.current_byte);
-	fflush(stdout);
+	if (g_rx.current_byte > 128)
+	{
+		rx_reset_assembly();
+		printf("\nInvalid payload byte detected, searching for preamble\n");
+		fflush(stdout);
+		LOG_RX("Payload byte is greater than 128 error detected, resetting assembly");
+		g_rx.state = RX_SEARCH_PREAMBLE;
+		g_rx.locked_bit_time_us = UINT64_MAX;
+		return;
+	}
+	consume(g_rx.current_byte);
+
 	// increment the payload bytes collected count
 	g_rx.payload_bytes_collected++;
 
+	// //would call reset assembly but that also resets the bytes collected so we do it manually
+	// g_rx.current_byte = 0;
+	// g_rx.bit_pos = 0;
+	// g_rx.have_prev_edge = false;
+	// g_rx.last_rising_us = 0;
+	// g_rx.preamble_found_count = 0;
+	// printf("payload_bytes_collected: %d\n", g_rx.payload_bytes_collected);
+	// fflush(stdout);
 	// if the payload bytes collected is greater than or equal to the payload bytes expected
 	if (g_rx.payload_bytes_collected >= g_rx.payload_bytes_expected)
 	{
+		rx_reset_assembly();
 		// print the byte we received
 		// printf("%c", g_rx.current_byte);
 		// fflush(stdout);
 
 		// reset the assembly so we move to the next state
-		rx_reset_assembly();
 		// set the state to RX_SEARCH_STOP which is the next state.
 		g_rx.state = RX_SEARCH_STOP;
 
 		// log that we have collected the payload and can search for the stop byte.
 		LOG_RX("Payload collected, entering search stop state");
 	}
+	else
+	{
+		// would call reset assembly but that also resets the bytes collected so we do it manually
+		g_rx.current_byte = 0;
+		g_rx.bit_pos = 0;
+		g_rx.have_prev_edge = false;
+		g_rx.last_rising_us = 0;
+		g_rx.preamble_found_count = 0;
+	}
+}
+
+static inline void rx_collect_length()
+{
+	LOG_RX("Collecting length byte: 0x%02X", g_rx.current_byte);
+	// g_rx.payload_bytes_expected = g_rx.current_byte;
+	uint8_t length = g_rx.current_byte - 128;
+	// printf("payload_bytes_expected: %d\n", length);
+	g_rx.payload_bytes_expected = length;
+	rx_reset_assembly();
+	g_rx.state = RX_COLLECT_PAYLOAD;
+	fflush(stdout);
 }
 
 /**
@@ -492,6 +571,7 @@ static inline void rx_check_stop()
 		rx_reset_assembly();
 		// set the state to RX_SEARCH_PREAMBLE which is the next state.
 		g_rx.state = RX_SEARCH_PREAMBLE;
+		g_rx.locked_bit_time_us = UINT64_MAX;
 		LOG_RX("Stop byte not found, resetting to search preamble");
 	}
 }
@@ -516,6 +596,9 @@ static inline void rx_push_completed_byte()
 		break;
 	case RX_SEARCH_START_OF_FRAME: // we are searching for the start of frame byte
 		rx_check_start_of_frame();
+		break;
+	case RX_COLLECT_LENGTH: // we are collecting the length of the payload
+		rx_collect_length();
 		break;
 	case RX_COLLECT_PAYLOAD: // we are collecting the payload bytes
 		rx_collect_payload();
@@ -643,12 +726,12 @@ static void rx_task(void *arg)
 		*/
 		if (xQueueReceive(rx_edge_queue, &now_us, portMAX_DELAY))
 		{
-			for (int i = 0; i < 7; ++i)
+			for (int i = 0; i < PREAMBLE_REPS*8-1; ++i)
 			{
 				g_rx_bit_times[i] = g_rx_bit_times[i + 1];
 			}
 			// store the bit time
-			g_rx_bit_times[7] = now_us;
+			g_rx_bit_times[PREAMBLE_REPS*8-1] = now_us;
 			// print the current time
 			// LOG_RX("Current time: %lld", now_us);
 
@@ -847,9 +930,6 @@ static esp_err_t laser_rx_init(int expected_payload_bytes)
 	// set the RX GPIO number
 	g_rx.rx_gpio = LASER_RX_GPIO;
 
-	// set the number of bytes expected in a payload
-	g_rx.payload_bytes_expected = expected_payload_bytes;
-
 	// we do not have a phase lock yet.
 	g_rx.have_prev_edge = false;
 
@@ -924,24 +1004,33 @@ extern "C" void app_main(void)
 // if TX is enabled, send a test message continuously.
 #if ENABLE_TX
 	// create a test message to send.
+	// const char hello[] = "This message was sent via a laser pointer and received by an LDR with limited signal conditioning!\n";
+	const char hello[] = "This message was sent via a laser pointer!\n";
+	// const char hello[] = "test a message!\n";
+	// const char hello[] = "short message\n";
+	// remove null terminator
+
 	// const uint8_t hello[] = {(uint8_t)'H', (uint8_t)'e', (uint8_t)'l', (uint8_t)'l', (uint8_t)'o', (uint8_t)' ', (uint8_t)'W', (uint8_t)'o', (uint8_t)'r', (uint8_t)'l', (uint8_t)'d', (uint8_t)'!', (uint8_t)'\n'};
-	const uint8_t hello[] = {(uint8_t)'H', (uint8_t)'e', (uint8_t)'\n'};
+	// const uint8_t hello[] = {(uint8_t)'H', (uint8_t)'e', (uint8_t)'\n'};
+	// const uint8_t hello[] = {(uint8_t)'H', (uint8_t)'e', (uint8_t)'\n'};
 	// const uint8_t hello[] = {0xAA};
 	tx_data_t tx_data;
-	memcpy(tx_data.data, hello, sizeof(hello));
-	tx_data.len = sizeof(hello);
+
+	// remove null terminator from char array
+	memcpy(tx_data.data, hello, sizeof(hello) - 1);
+	tx_data.len = sizeof(hello) - 1;
 	// loop forever
 	for (;;)
 	{
 		// send the test message
 		// for (size_t i = 0; i < sizeof(hello); ++i)
 		// {
-			// tx_data.data[0] = hello[i];
-			// enqueue one byte at a time; TX task will send frames
-			laser_tx_write(tx_data, portMAX_DELAY);
+		// tx_data.data[0] = hello[i];
+		// enqueue one byte at a time; TX task will send frames
+		laser_tx_write(tx_data, portMAX_DELAY);
 		// }
 		// wait for 2.5 seconds
-		vTaskDelay(pdMS_TO_TICKS(7500));
+		vTaskDelay(pdMS_TO_TICKS(2500));
 	}
 #else
 	// wait forever

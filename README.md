@@ -138,6 +138,17 @@ My scope couldn’t export or measure accurately.
 Hard to aim a 2 mm beam at a 5 mm LDR.
 **Solution:** Taped both to a ruler for quick tests.
 
+**Challenge 6: Small Bytes Unreliable**
+Bytes < 128 were not received reliably due to larger required infering of zeros.
+
+**Solution:** Added 128 to all sent bytes and subtracted 128 on the RX side.
+
+**Challenge 6: Unreliable 3 Char Pairs**
+ex: "t m"
+
+**Solution:** None yet
+
+
 ## Testing & Validation
 
 **Simulation:**
