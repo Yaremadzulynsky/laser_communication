@@ -1,4 +1,4 @@
-#pragma once
+
 
 // ================== CONFIG ==================
 // #define BIT_MS              (10) //64 is max on RMT TX
@@ -27,8 +27,8 @@
 
 
 // ================== LOG TAG_TX =================
-#define TAG_TX "LASER_TX"
-#define TAG_RX "LASER_RX"
+static const char *TAG_TX = "LASER_TX";
+static const char *TAG_RX = "LASER_RX";
 
 #if DEBUG_RX
 #define LOG_RX(format, ...) ESP_LOGI(TAG_RX, format, ##__VA_ARGS__)
