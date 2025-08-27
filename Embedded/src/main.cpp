@@ -517,6 +517,9 @@ static inline void rx_push_completed_byte()
 		break;
 	case RX_SEARCH_STOP: // we are searching for the stop byte
 		rx_check_stop();
+		// reset frequency lock
+		g_rx.locked_bit_time_us = UINT64_MAX;
+		
 		break;
 	default:
 		break;
