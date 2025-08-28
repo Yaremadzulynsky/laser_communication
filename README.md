@@ -1,3 +1,4 @@
+![](./assets/overview.png)
 # Project Summary
 
 ## Executive Summary
@@ -9,8 +10,10 @@ I built a project that turns an ordinary laser pointer into a data link. Instead
 ---
 
 ## Overview
-
+![](./assets/hardware_setup.jpeg)
 **(Hardware setup)**
+![](./assets/circuit.png)
+**(Circuit Diagram)**
 
 I started this project because I didn’t want all the material I studied for finals to just fade away. From my microcontrollers course, I pulled in concepts about hardware drivers and communication protocols. From sensors and instrumentation, I applied op amps and signal conditioning. From system modeling, I used Simulink to simulate the system with real-world measurements from an LDR receiving a laser signal.
 
@@ -95,6 +98,7 @@ flowchart LR
     n20@{ shape: rect}
 ```
 
+
 **(Transmission block diagram)**
 
 * Uses the ESP32 RMT peripheral for precise timing (task scheduling wasn’t accurate enough).
@@ -127,6 +131,7 @@ flowchart LR
 
 **Protocol Frame:**
 
+![](./assets/frame.png)
 **(Data frame)**
 
 ---
@@ -171,12 +176,14 @@ Corrupted messages (hand in front of beam for part of it) takes more than 1 prea
 
 ### Simulation
 
+![](./assets/signal_conditioning.png)
 **(Signal conditioning model)**
 
 * Used Simscape with real LDR samples to test conditioning.
 * Tuned op amp model to match my actual device.
 * Validated that rising edges lined up as expected.
 
+![](./assets/model_output.png)
 **(Simulated LDR voltage vs conditioned output)**
 
 ### Hardware
