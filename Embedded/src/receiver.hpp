@@ -168,8 +168,6 @@ inline static void rx_handle_payload()
 
 	if (assembly.byte > 128)
 	{
-		printf("\nInvalid payload byte detected, searching for preamble\n");
-		fflush(stdout);
 		LOG_RX("Payload byte is greater than 128 error detected, resetting assembly");
 		state = PREAMBLE;
 		lock.bit_time_us = UINT64_MAX;

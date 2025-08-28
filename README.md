@@ -4,7 +4,7 @@
 
 I built a project that turns an ordinary laser pointer into a data link. Instead of sending information through wires or using radio waves, I used light as the medium of communication. A laser beam carried the data, and a light sensor on the other end turned those flashes back into digital information. I created a custom communication protocol with preamble detection, framing, and frequency/phase locking. On top of that, I modeled the system in MATLAB Simulink, tuned the analog circuits, and validated everything on hardware. The end result is a working proof‑of‑concept for laser‑based communication, built entirely from scavenged parts and creativity.
 
-[Demo Video](https://www.youtube.com/watch?v=00r8lxy1KA8)
+[Demo Video](https://youtu.be/lqTZRJkcThA)
 
 ---
 

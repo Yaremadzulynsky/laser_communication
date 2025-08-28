@@ -25,7 +25,7 @@ extern "C" void app_main(void)
 	// Send a test message continuously.
 
 	// Test message to send
-	const char test_message[] = "This message was sent via a laser pointer!\n";
+	const char test_message[] = "Laser Communication\n";
 	static_assert((sizeof(test_message) - 1) <= MAX_PAYLOAD_LENGTH, "Test payload exceeds MAX_PAYLOAD_LENGTH");
 	tx_data_t tx_data;
 
