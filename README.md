@@ -90,12 +90,13 @@ flowchart LR
     n14["GPIO 13<br>RMT"] --> n12(["Laser"])
     n15 --> n16["write(PREAMBLE_BYTE)"] & n14
     n16 --> n17["write(SOF_BYTE)"] & n14
-    n17 --> n18["write(byte)"] & n14
-    n18 --> n19["write(EOF_BYTE)"] & n14
-    n19 --> n14
-    n20["Producer"] -- enqueue --> n13
+    n17 --> n18["write(payload_length)"] & n14
+    n18 --> n19["write(payload)"] & n14
+    n19 --> n20["write(EOF_BYTE)"] & n14
+    n20 --> n14
+    n21["Producer"] -- enqueue --> n13
     n13@{ shape: rounded}
-    n20@{ shape: rect}
+    n21@{ shape: rect}
 ```
 
 
@@ -117,9 +118,11 @@ flowchart LR
     n5 --> n6["byte = (byte << 1) | 1"]
     n6 --> n7["full_byte_collected -> state machine"]
     n7 -- "state = PREAMBLE" --> n8["byte = PREAMBLE_BYTE? -> state = SOF"]
-    n7 -- "state = SOF" --> n9["byte = SOF_BYTE? -> state = PAYLOAD"]
-    n7 -- "state = PAYLOAD" --> n10["byte = PAYLOAD_BYTE? -> consume(byte)<br>state = EOF"]
+    n7 -- "state = SOF" --> n9["byte = SOF_BYTE? -> state = PAYLOAD_LEN"]
+    
+    n7 -- "state = PAYLOAD" --> n10["consume(byte)<br>state = EOF"]
     n7 -- "state = EOF" --> n11["byte = EOF_BYTE? -> state = PREAMBLE"]
+    n7 -- "state = PAYLOAD_LEN" --> n12["state = PAYLOAD"]
 ```
 
 **(Reception block diagram)**
@@ -256,14 +259,14 @@ All tuning parameters live in `Embedded/src/defines.hpp`.
 
 This project turned my exam knowledge into a working prototype. By mixing microcontroller programming, analog signal conditioning, and system modeling, I created a simple but functional laser comms link. Even with limited tools and parts, I managed to send real data reliably. More than anything, this project shows adaptability, resourcefulness, and the ability to bring theory into practice[.](https://docs.espressif.com/projects/esp-idf/en/v4.3/esp32/api-reference/peripherals/rmt.html)
 
-\*\*[(Full system running in debug mod](https://docs.espressif.com/projects/esp-idf/en/v4.3/esp32/api-reference/peripherals/rmt.html)\*\***e)**
 
 ---
 
-## [References](https://www.ti.com/lit/ds/symlink/ua741.pdf)
+## References
 
-* [ESP-IDF RMT Peripheral Do](https://www.ti.com/lit/ds/symlink/ua741.pdf)[cume](https://docs.espressif.com/projects/esp-idf/en/v4.3/esp32/api-reference/peripherals/rmt.html)[ntation](https://learn.adafruit.com/assets/123406)
-* [Texas Instruments UA741 Op A](https://learn.adafruit.com/assets/123406)[mp Datasheet](https://www.ti.com/lit/ds/symlink/ua741.pdf)
+
+* [ESP-IDF RMT Peripheral Documentation](https://docs.espressif.com/projects/esp-idf/en/v4.3/esp32/api-reference/peripherals/rmt.html)
+* [Texas Instruments UA741 Op Amp](https://www.ti.com/lit/ds/symlink/ua741.pdf)
 * [Adafruit Feather ESP32 V2 Documentation](https://learn.adafruit.com/assets/123406)
 
 **Relevant Courses:**
@@ -275,7 +278,7 @@ This project turned my exam knowledge into a working prototype. By mixing microc
 **Tools Used:**
 
 * GPT-5 via Cursor & browser
-* PlatformIO
+* PlatformIO1
 
 ---
 
@@ -285,7 +288,6 @@ This project turned my exam knowledge into a working prototype. By mixing microc
 
    * Connect the laser pointer to GPIO13.
    * Build the receiver with LDR + op amp.
-   * **(Circuit diagram)**
 
 2. **Set up PlatformIO:**
 
