@@ -53,7 +53,7 @@ This project was shaped not only by engineering choices but also by practical co
 
 * **Oscilloscope restrictions** – The scope on hand could not export data and had limited accuracy, so I relied on the ESP32’s ADC to capture and log signals for analysis.
 * **Minimal analog hardware** – With only one op amp available, I couldn’t build a Schmitt trigger or more advanced front-end circuitry. This forced me to detect only rising edges, rule out Manchester encoding, and infer zeros from timing gaps.
-* **Photodiode instead of a full detector** – Using a bare photodiode meant the raw signal was noisy and unusable without conditioning. This limitation let me apply classroom knowledge of op amp signal conditioning in a very direct way.
+* **LDR instead of a photodiode** – Using a bare LDR meant the raw signal was noisy and unusable without conditioning. This limitation let me apply classroom knowledge of op amp signal conditioning in a very direct way.
 * **No new parts allowed** – To stay true to the self‑imposed rule of resourcefulness, I scavenged components rather than purchasing. This made the project feel closer to a creative engineering challenge than a parts‑driven build.
 
 ---
